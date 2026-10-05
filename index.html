@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#5B67F1" />
+  <meta name="description" content="家庭儿童积分、任务与奖励管理系统" />
+  <title>小小成长银行</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell" aria-live="polite">
+    <section id="authScreen" class="auth-screen hidden">
+      <div class="auth-art" aria-hidden="true">
+        <div class="brand-mark large">✦</div>
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+      </div>
+      <div class="auth-card">
+        <div class="eyebrow">FAMILY GROWTH</div>
+        <h1>小小成长银行</h1>
+        <p>把每一次好习惯，都存进成长账户。</p>
+        <div class="segmented" role="tablist">
+          <button class="seg-btn active" data-auth-tab="login">登录</button>
+          <button class="seg-btn" data-auth-tab="signup">创建家庭</button>
+        </div>
+        <form id="authForm" class="form-stack">
+          <label id="nameField" class="field hidden"><span>你的称呼</span><input name="displayName" autocomplete="name" placeholder="例如：乐乐妈妈" /></label>
+          <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="email" required placeholder="name@example.com" /></label>
+          <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" minlength="6" required placeholder="至少 6 位" /></label>
+          <button class="primary-btn full" type="submit"><span id="authSubmitText">登录家庭</span><span class="btn-arrow">→</span></button>
+        </form>
+        <button id="demoLogin" class="text-btn">先体验演示家庭</button>
+        <p id="inviteHint" class="invite-hint hidden"></p>
+      </div>
+    </section>
+
+    <section id="loadingScreen" class="loading-screen">
+      <div class="loader-logo">✦</div><p>正在打开成长账户…</p>
+    </section>
+
+    <section id="mainApp" class="main-app hidden">
+      <header class="topbar">
+        <div class="brand-row"><div class="brand-mark">✦</div><div><span id="greeting" class="greeting">下午好</span><h1 id="familyName">星星家庭</h1></div></div>
+        <div class="top-actions">
+          <span id="demoBadge" class="demo-badge hidden">演示</span>
+          <button class="icon-btn" data-action="show-help" aria-label="功能说明">!</button>
+          <button id="profileButton" class="avatar-button" aria-label="个人菜单"><span id="profileInitial">妈</span></button>
+        </div>
+      </header>
+
+      <main id="pageContent" class="page-content"></main>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item active" data-page="home"><i data-lucide="house"></i><span>首页</span></button>
+        <button class="nav-item" data-page="tasks"><i data-lucide="list-checks"></i><span>任务</span></button>
+        <button class="nav-item nav-center admin-only" data-action="quick-add" aria-label="快速创建"><span>＋</span></button>
+        <button class="nav-item" data-page="rewards"><i data-lucide="gift"></i><span>奖励</span></button>
+        <button class="nav-item" data-page="family"><i data-lucide="users"></i><span>家庭</span></button>
+      </nav>
+    </section>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root" aria-live="assertive"></div>
+
+  <script src="./config.js" onerror="this.remove()"></script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
