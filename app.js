@@ -42,7 +42,7 @@ const demoData = () => {
       { id: task2, child_id: childId, name: "阅读 30 分钟", description: "选择喜欢的课外书安静阅读", type: "main", cycle: "daily", reward_points: 15, penalty_points: 8, icon: "📖", active: true },
       { id: task3, child_id: childId, name: "帮忙做家务", description: "主动完成一项家庭劳动", type: "assist", cycle: "weekly", reward_points: 10, penalty_points: 0, icon: "🧹", active: true }
     ],
-    submissions: [{ id: "demo-sub-1", task_id: task2, child_id: childId, status: "pending", submitted_at: new Date().toISOString(), note: "今天读了《夏洛的网》" }],
+    submissions: [{ id: "demo-sub-1", task_id: task2, child_id: childId, due_date: today(), status: "pending", submitted_at: new Date().toISOString(), note: "今天读了《夏洛的网》" }],
     rewards: [
       { id: "demo-reward-1", name: "周末看电影", description: "一起选一部喜欢的电影", cost_points: 120, available_time: "周五至周日", conditions: "本周主线任务完成率 ≥ 80%", emoji: "🎬", active: true },
       { id: "demo-reward-2", name: "游乐园半日游", description: "选择一家游乐园，快乐出发", cost_points: 500, available_time: "周末或节假日", conditions: "需提前一天预约", emoji: "🎡", active: true },
@@ -242,9 +242,10 @@ function ledgerWindowStart(windowName, now = new Date()) {
   }
   return null;
 }
-function ledgerItems(childId, windowName = state.ledgerWindow) {
+function ledgerItems(childId, windowName = state.ledgerWindow, includeVoided = false) {
   const start = ledgerWindowStart(windowName);
-  return state.data.ledger.filter(item => (!childId || item.child_id === childId) && (!start || new Date(item.created_at) >= start));
+  const voidedIds = includeVoided ? new Set() : new Set(state.data.ledger.filter(item => item.correction_kind === "void").map(item => item.reference_ledger_id));
+  return state.data.ledger.filter(item => (!childId || item.child_id === childId) && (!start || new Date(item.created_at) >= start) && (includeVoided || (item.correction_kind !== "void" && !voidedIds.has(item.id))));
 }
 function ledgerWindowLabel(windowName = state.ledgerWindow) { return ({ all: "全部", month: "最近一个月", week: "本周" })[windowName] || "全部"; }
 function ledgerWindowControls() {
@@ -270,7 +271,6 @@ function render() {
 function renderHome() {
   const child = activeChild();
   if (!child) return `<div class="page-title"><div><h2>欢迎回家</h2><p>先为孩子开设第一个成长账户</p></div></div>${empty("user-plus", "还没有儿童账户", "开户后即可创建任务、记录积分和兑换奖励。", isAdmin() ? "开设账户" : "等待管理员开户", "add-child")}`;
-  const pending = state.data.submissions.filter(s => s.status === "pending" && (!isAdmin() || true));
   const tasks = state.data.tasks.filter(t => t.child_id === child.id && t.active).slice(0, 3);
   const filteredLedger = ledgerItems(child.id);
   const ledger = filteredLedger.slice(0, 4);
@@ -292,8 +292,8 @@ function renderHome() {
     <div class="quick-grid">
       ${isAdmin() ? quick("plus-circle", "存入积分", "adjust-points", "tone-green") : quick("check-circle-2", "提交任务", "go-tasks", "tone-green")}
       ${isAdmin() ? quick("minus-circle", "扣除积分", "deduct-points", "tone-red") : quick("gift", "兑换奖励", "go-rewards", "tone-orange")}
-      ${isAdmin() ? quick("clipboard-check", `待审核 ${pending.length}`, "show-reviews", "tone-orange") : quick("scroll-text", "积分流水", "show-ledger", "tone-purple")}
-      ${quick("bar-chart-3", "成长记录", "show-ledger", "tone-purple")}
+      ${isAdmin() ? quick("trophy", "任务奖励", "grant-task-reward", "tone-purple") : quick("trophy", "任务奖励", "go-tasks", "tone-purple")}
+      ${isAdmin() ? quick("gift", "积分兑换", "direct-redemption", "tone-orange") : quick("gift", "积分兑换", "go-rewards", "tone-orange")}
     </div>
     <section class="section"><div class="section-head"><div><h2>今天的任务</h2><p>${tasks.length ? "稳稳完成，一点点变优秀" : "今天还没有安排"}</p></div><button class="link-btn" data-page="tasks">查看全部</button></div>
       <div class="card list-card">${tasks.length ? tasks.map(task => taskRow(task)).join("") : emptyInline("calendar-check", "暂无任务")}</div>
@@ -310,11 +310,22 @@ function taskRow(task) {
   const status = sub?.status === "pending" ? "待审核" : sub?.status === "approved" ? "已完成" : "进行中";
   return `<div class="list-row"><div class="row-icon ${task.type === "main" ? "tone-purple" : "tone-green"}">${escapeHTML(task.icon || (task.type === "main" ? "🎯" : "✨"))}</div><div class="row-main"><h3>${escapeHTML(task.name)}</h3><p>${cycleLabel(task.cycle)} · ${status}</p></div><div class="row-value positive">+${task.reward_points}<small>积分赏金</small></div></div>`;
 }
+function ledgerVisual(item) {
+  const amount = Number(item.amount || 0);
+  if (item.source_type === "manual" && amount >= 0) return { tone: "tone-green", icon: "circle-plus", label: "存入积分" };
+  if (item.source_type === "manual") return { tone: "tone-red", icon: "circle-minus", label: "扣除积分" };
+  if (item.source_type === "task") return { tone: "tone-purple", icon: "trophy", label: "任务奖励" };
+  if (item.source_type === "redemption") return { tone: "tone-orange", icon: "gift", label: "积分兑换" };
+  if (item.source_type === "penalty") return { tone: "tone-red", icon: "triangle-alert", label: "任务扣分" };
+  if (item.source_type === "initial") return { tone: "tone-blue", icon: "landmark", label: "开户积分" };
+  return { tone: "tone-gray", icon: "rotate-ccw", label: item.correction_kind === "void" ? "删除冲正" : "积分更正" };
+}
 function ledgerRow(item, manage = false) {
   const corrected = state.data.ledger.some(row => row.reference_ledger_id === item.id);
   const manageable = manage && isAdmin() && item.source_type === "manual" && !corrected;
   const amount = Number(item.amount || 0);
-  return `<div class="ledger-entry ${corrected ? "is-corrected" : ""}"><div class="list-row"><div class="row-icon ${amount >= 0 ? "tone-green" : "tone-red"}"><i data-lucide="${amount >= 0 ? "arrow-down-left" : "arrow-up-right"}"></i></div><div class="row-main"><h3>${escapeHTML(item.description)}${corrected ? ` <span class="ledger-status">已更正</span>` : ""}</h3><p>${fmtTime(item.created_at)}</p></div><div class="row-value ${amount >= 0 ? "positive" : "negative"}">${amount >= 0 ? "+" : ""}${amount}<small>余额 ${item.balance_after}</small></div></div>${manageable ? `<div class="ledger-entry-actions"><button type="button" data-action="edit-ledger" data-id="${item.id}">编辑调整</button><button type="button" class="danger" data-action="void-ledger" data-id="${item.id}">删除</button></div>` : ""}</div>`;
+  const visual = ledgerVisual(item);
+  return `<div class="ledger-entry ${corrected ? "is-corrected" : ""}"><div class="list-row"><div class="row-icon ${visual.tone}"><i data-lucide="${visual.icon}"></i></div><div class="row-main"><h3>${escapeHTML(item.description)}${corrected ? ` <span class="ledger-status">已更正</span>` : ""}</h3><p><span class="ledger-type-badge ${visual.tone}">${visual.label}</span>${fmtTime(item.created_at)}</p></div><div class="row-value ${amount >= 0 ? "positive" : "negative"}">${amount >= 0 ? "+" : ""}${amount}<small>余额 ${item.balance_after}</small></div></div>${manageable ? `<div class="ledger-entry-actions"><button type="button" data-action="edit-ledger" data-id="${item.id}">编辑调整</button><button type="button" class="danger" data-action="void-ledger" data-id="${item.id}">删除</button></div>` : ""}</div>`;
 }
 
 function renderTasks() {
@@ -454,6 +465,22 @@ function showPointsModal(deduct = false) {
   openModal(deduct ? "扣除积分" : "存入积分", `<form class="modal-form" data-form="points"><input type="hidden" name="direction" value="${deduct ? -1 : 1}" /><label class="field"><span>儿童账户</span><select name="child_id">${state.data.children.map(x => `<option value="${x.id}" ${x.id === c.id ? "selected" : ""}>${escapeHTML(x.name)} · ${x.balance} 分</option>`).join("")}</select></label><label class="field"><span>${deduct ? "扣除" : "存入"}积分 *</span><input name="amount" type="number" min="1" max="100000" required value="10" /></label><label class="field"><span>原因 *</span><input name="description" required maxlength="120" placeholder="例如：主动帮助家人" /></label><div class="modal-actions"><button type="button" class="ghost-btn" data-action="close-modal">取消</button><button class="${deduct ? "danger-btn" : "primary-btn"}" type="submit">确认${deduct ? "扣除" : "存入"}</button></div></form>`);
 }
 
+function showTaskRewardModal() {
+  const child = activeChild();
+  if (!child) return toast("请先开设儿童账户", "error");
+  const tasks = state.data.tasks.filter(task => task.child_id === child.id && task.active && Number(task.reward_points) > 0);
+  if (!tasks.length) return toast("这个儿童账户还没有可奖励的任务", "error");
+  openModal("发放任务奖励", `<form class="modal-form" data-form="task-reward"><div class="info-item"><span class="info-num">奖</span><div><strong>${escapeHTML(child.name)}的任务奖励</strong><p>选择已经创建的任务，确认后立即存入对应赏金积分。</p></div></div><label class="field"><span>选择任务 *</span><select name="task_id" required>${tasks.map(task => `<option value="${task.id}">${escapeHTML(task.icon || "🎯")} ${escapeHTML(task.name)} · +${task.reward_points} 积分</option>`).join("")}</select></label><div class="modal-actions"><button type="button" class="ghost-btn" data-action="close-modal">取消</button><button type="submit" class="primary-btn">确认发放</button></div></form>`);
+}
+
+function showDirectRedemptionModal() {
+  const child = activeChild();
+  if (!child) return toast("请先开设儿童账户", "error");
+  const rewards = state.data.rewards.filter(reward => reward.active);
+  if (!rewards.length) return toast("还没有创建可兑换的奖励", "error");
+  openModal("完成积分兑换", `<form class="modal-form" data-form="direct-redemption"><div class="info-item"><span class="info-num">兑</span><div><strong>${escapeHTML(child.name)} · 当前 ${child.balance} 积分</strong><p>选择已创建的奖励，确认后立即视为已兑换并扣除积分。</p></div></div><input type="hidden" name="child_id" value="${child.id}" /><label class="field"><span>选择奖励 *</span><select name="reward_id" required>${rewards.map(reward => `<option value="${reward.id}" ${child.balance < reward.cost_points ? "disabled" : ""}>${escapeHTML(reward.emoji || "🎁")} ${escapeHTML(reward.name)} · -${reward.cost_points} 积分${child.balance < reward.cost_points ? "（余额不足）" : ""}</option>`).join("")}</select></label><p class="helper">确认后会生成已通过的兑换记录和积分流水，无需再次审核。</p><div class="modal-actions"><button type="button" class="ghost-btn" data-action="close-modal">取消</button><button type="submit" class="primary-btn" ${rewards.every(reward => child.balance < reward.cost_points) ? "disabled" : ""}>确认兑换</button></div></form>`);
+}
+
 function showSubmitTask(task) {
   openModal("提交任务", `<form class="modal-form" data-form="submission" data-id="${task.id}"><div class="info-item"><span class="info-num">${escapeHTML(task.icon || "✓")}</span><div><strong>${escapeHTML(task.name)}</strong><p>提交后等待家长审核，最高可获得 ${task.reward_points} 积分。</p></div></div><label class="field"><span>完成说明</span><textarea name="note" maxlength="240" placeholder="我完成了什么？有什么收获？"></textarea></label><div class="modal-actions"><button type="button" class="ghost-btn" data-action="close-modal">取消</button><button class="primary-btn" type="submit">确认提交</button></div></form>`);
 }
@@ -477,7 +504,7 @@ function showRedemptionReview(redemption) {
 
 function showLedger() {
   const c = activeChild();
-  const items = ledgerItems(c?.id);
+  const items = ledgerItems(c?.id, state.ledgerWindow, true);
   const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   openModal(`${c?.name || "孩子"}的积分流水`, `<div class="modal-form" data-ledger-modal><div class="ledger-summary"><span>${ledgerWindowLabel()}积分净变化</span><strong class="${total >= 0 ? "positive" : "negative"}">${total >= 0 ? "+" : ""}${total}</strong></div>${ledgerWindowControls()}<p class="helper">仅手动存入或扣除的流水可编辑调整或删除；任务、兑换和开户流水保持只读，确保成长记录完整。</p><div class="card list-card">${items.length ? items.map(item => ledgerRow(item, true)).join("") : emptyInline("receipt-text", "当前时间范围暂无积分记录")}</div></div>`);
 }
@@ -516,6 +543,8 @@ async function handleForm(form) {
     if (type === "task") await saveTask(fd, form.dataset.id);
     if (type === "reward") await saveReward(fd, form.dataset.id);
     if (type === "points") await adjustPoints(fd);
+    if (type === "task-reward") await grantTaskReward(fd.task_id);
+    if (type === "direct-redemption") await completeDirectRedemption(fd);
     if (type === "ledger-correction") await correctLedger(fd, form.dataset.id);
     if (type === "submission") await submitTask(form.dataset.id, fd.note);
     if (type === "review-task") await reviewTask(form.dataset.id, fd);
@@ -592,6 +621,42 @@ async function adjustPoints(fd) {
   } else { const { error } = await state.supabase.rpc("adjust_child_points", { p_child_id: fd.child_id, p_amount: amount, p_description: fd.description.trim() }); if (error) throw error; }
   closeModal(); await refresh(); toast(amount > 0 ? "积分已存入" : "积分已扣除", "success");
 }
+async function grantTaskReward(taskId) {
+  const task = state.data.tasks.find(row => row.id === taskId && row.active);
+  if (!task) throw new Error("任务不存在或已停用");
+  if (state.demo) {
+    const child = state.data.children.find(row => row.id === task.child_id);
+    const existing = state.data.submissions.find(row => row.task_id === task.id && row.child_id === child.id && row.due_date === today());
+    if (existing?.status === "approved") throw new Error("这个任务今天已经发放过奖励");
+    child.balance += Number(task.reward_points);
+    child.level = Math.max(1, Math.floor(child.balance / 100) + 1);
+    const submission = existing || { id: uid(), family_id: state.data.family.id, task_id: task.id, child_id: child.id, due_date: today(), submitted_at: new Date().toISOString() };
+    Object.assign(submission, { status: "approved", note: "家长直接发放任务奖励", completion_pct: 100, awarded_points: Number(task.reward_points), reviewed_at: new Date().toISOString() });
+    if (!existing) state.data.submissions.unshift(submission);
+    state.data.ledger.unshift({ id: uid(), child_id: child.id, amount: Number(task.reward_points), balance_after: child.balance, source_type: "task", description: `任务奖励：${task.name}`, task_submission_id: submission.id, created_at: new Date().toISOString() });
+  } else {
+    const { error } = await state.supabase.rpc("grant_task_reward", { p_task_id: taskId });
+    if (error) throw error;
+  }
+  closeModal(); await refresh(); toast("任务奖励已发放", "success");
+}
+async function completeDirectRedemption(fd) {
+  const reward = state.data.rewards.find(row => row.id === fd.reward_id && row.active);
+  const child = state.data.children.find(row => row.id === fd.child_id);
+  if (!reward || !child) throw new Error("奖励或儿童账户不存在");
+  if (child.balance < reward.cost_points) throw new Error("积分余额不足");
+  if (state.demo) {
+    child.balance -= Number(reward.cost_points);
+    child.level = Math.max(1, Math.floor(child.balance / 100) + 1);
+    const redemption = { id: uid(), family_id: state.data.family.id, reward_id: reward.id, child_id: child.id, status: "approved", cost_points: reward.cost_points, review_note: "管理员直接完成兑换", created_at: new Date().toISOString(), reviewed_at: new Date().toISOString() };
+    state.data.redemptions.unshift(redemption);
+    state.data.ledger.unshift({ id: uid(), child_id: child.id, amount: -Number(reward.cost_points), balance_after: child.balance, source_type: "redemption", description: `积分兑换：${reward.name}`, redemption_id: redemption.id, created_at: new Date().toISOString() });
+  } else {
+    const { error } = await state.supabase.rpc("admin_redeem_reward", { p_child_id: child.id, p_reward_id: reward.id });
+    if (error) throw error;
+  }
+  closeModal(); await refresh(); toast("积分兑换已完成", "success");
+}
 async function correctLedger(fd, ledgerId) {
   const item = state.data.ledger.find(row => row.id === ledgerId);
   if (!item || item.source_type !== "manual") throw new Error("只有手动积分流水可以调整");
@@ -606,7 +671,7 @@ async function correctLedger(fd, ledgerId) {
     if (child.balance + delta < 0) throw new Error("更正后积分余额不能小于 0");
     child.balance += delta;
     child.level = Math.max(1, Math.floor(child.balance / 100) + 1);
-    state.data.ledger.unshift({ id: uid(), child_id: child.id, amount: delta, balance_after: child.balance, source_type: "reversal", description: voiding ? `撤销：${item.description}` : `更正为 ${newAmount >= 0 ? "+" : ""}${newAmount}：${description}`, reference_ledger_id: item.id, created_at: new Date().toISOString() });
+    state.data.ledger.unshift({ id: uid(), child_id: child.id, amount: delta, balance_after: child.balance, source_type: "reversal", correction_kind: voiding ? "void" : "edit", description: voiding ? `撤销：${item.description}` : `更正为 ${newAmount >= 0 ? "+" : ""}${newAmount}：${description}`, reference_ledger_id: item.id, created_at: new Date().toISOString() });
   } else {
     const { error } = await state.supabase.rpc("correct_manual_ledger", { p_ledger_id: ledgerId, p_new_amount: newAmount, p_new_description: description, p_void: voiding });
     if (error) throw error;
@@ -723,6 +788,8 @@ document.addEventListener("click", async event => {
   if (action === "delete-reward") await deleteItem("rewards", id, "rewards", "奖励卡");
   if (action === "adjust-points") showPointsModal(false);
   if (action === "deduct-points") showPointsModal(true);
+  if (action === "grant-task-reward") showTaskRewardModal();
+  if (action === "direct-redemption") showDirectRedemptionModal();
   if (action === "submit-task") showSubmitTask(state.data.tasks.find(t => t.id === id));
   if (action === "review-task") showReviewTask(state.data.submissions.find(s => s.id === id));
   if (action === "reject-task") await rejectTask(id);

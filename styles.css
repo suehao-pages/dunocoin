@@ -115,6 +115,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tone-green { color: #278d70; background: var(--green-soft); }
 .tone-orange { color: #b26b13; background: var(--orange-soft); }
 .tone-red { color: var(--red); background: var(--red-soft); }
+.tone-blue { color: #3571c8; background: #eaf3ff; }
+.tone-gray { color: #687086; background: #eef0f4; }
 
 .section { margin-top: 22px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 11px; }
@@ -141,6 +143,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .ledger-entry .list-row { border-bottom: 0; }
 .ledger-entry.is-corrected .list-row { opacity: .62; }
 .ledger-status { display: inline-flex; margin-left: 4px; padding: 2px 5px; border-radius: 6px; color: #8b6a28; background: #fff3d3; font-size: 8px; vertical-align: 1px; }
+.ledger-type-badge { display: inline-flex; margin-right: 6px; padding: 2px 6px; border-radius: 6px; font-size: 8px; font-weight: 900; vertical-align: 1px; }
 .ledger-entry-actions { display: flex; justify-content: flex-end; gap: 7px; padding: 0 14px 11px; }
 .ledger-entry-actions button { min-height: 31px; padding: 0 11px; border: 0; border-radius: 9px; background: var(--primary-soft); color: var(--primary); font-size: 10px; font-weight: 900; cursor: pointer; }
 .ledger-entry-actions button.danger { background: var(--red-soft); color: var(--red); }
