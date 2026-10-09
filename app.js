@@ -271,7 +271,6 @@ function render() {
 function renderHome() {
   const child = activeChild();
   if (!child) return `<div class="page-title"><div><h2>欢迎回家</h2><p>先为孩子开设第一个成长账户</p></div></div>${empty("user-plus", "还没有儿童账户", "开户后即可创建任务、记录积分和兑换奖励。", isAdmin() ? "开设账户" : "等待管理员开户", "add-child")}`;
-  const tasks = state.data.tasks.filter(t => t.child_id === child.id && t.active).slice(0, 3);
   const filteredLedger = ledgerItems(child.id);
   const ledger = filteredLedger.slice(0, 4);
   const windowTotal = filteredLedger.reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -295,9 +294,6 @@ function renderHome() {
       ${isAdmin() ? quick("trophy", "任务奖励", "grant-task-reward", "tone-purple") : quick("trophy", "任务奖励", "go-tasks", "tone-purple")}
       ${isAdmin() ? quick("gift", "积分兑换", "direct-redemption", "tone-orange") : quick("gift", "积分兑换", "go-rewards", "tone-orange")}
     </div>
-    <section class="section"><div class="section-head"><div><h2>今天的任务</h2><p>${tasks.length ? "稳稳完成，一点点变优秀" : "今天还没有安排"}</p></div><button class="link-btn" data-page="tasks">查看全部</button></div>
-      <div class="card list-card">${tasks.length ? tasks.map(task => taskRow(task)).join("") : emptyInline("calendar-check", "暂无任务")}</div>
-    </section>
     <section class="section"><div class="section-head"><div><h2>最近积分</h2><p>${ledgerWindowLabel()} · 净变化 ${windowTotal >= 0 ? "+" : ""}${windowTotal}</p></div><button class="link-btn" data-action="show-ledger">全部流水</button></div>
       ${ledgerWindowControls()}
       <div class="card list-card">${ledger.length ? ledger.map(ledgerRow).join("") : emptyInline("receipt-text", "暂无积分记录")}</div>
@@ -504,9 +500,9 @@ function showRedemptionReview(redemption) {
 
 function showLedger() {
   const c = activeChild();
-  const items = ledgerItems(c?.id, state.ledgerWindow, true);
+  const items = ledgerItems(c?.id, state.ledgerWindow);
   const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  openModal(`${c?.name || "孩子"}的积分流水`, `<div class="modal-form" data-ledger-modal><div class="ledger-summary"><span>${ledgerWindowLabel()}积分净变化</span><strong class="${total >= 0 ? "positive" : "negative"}">${total >= 0 ? "+" : ""}${total}</strong></div>${ledgerWindowControls()}<p class="helper">仅手动存入或扣除的流水可编辑调整或删除；任务、兑换和开户流水保持只读，确保成长记录完整。</p><div class="card list-card">${items.length ? items.map(item => ledgerRow(item, true)).join("") : emptyInline("receipt-text", "当前时间范围暂无积分记录")}</div></div>`);
+  openModal(`${c?.name || "孩子"}的积分流水`, `<div class="modal-form" data-ledger-modal><div class="ledger-summary"><span>${ledgerWindowLabel()}积分净变化</span><strong class="${total >= 0 ? "positive" : "negative"}">${total >= 0 ? "+" : ""}${total}</strong></div>${ledgerWindowControls()}<p class="helper">仅手动存入或扣除的流水可编辑调整或删除；已删除流水不再显示，但数据库仍保留账目用于安全核对。</p><div class="card list-card">${items.length ? items.map(item => ledgerRow(item, true)).join("") : emptyInline("receipt-text", "当前时间范围暂无积分记录")}</div></div>`);
 }
 
 function showLedgerCorrection(item, voiding = false) {

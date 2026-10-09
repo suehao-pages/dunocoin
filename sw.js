@@ -1,9 +1,9 @@
-const CACHE_NAME = "dunocoin-v5";
+const CACHE_NAME = "dunocoin-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=20261009-5",
-  "./app.js?v=20261009-5",
+  "./styles.css?v=20261009-6",
+  "./app.js?v=20261009-6",
   "./manifest.webmanifest",
   "./dunocoin-logo.png"
 ];
