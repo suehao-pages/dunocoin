@@ -26,11 +26,15 @@ create table if not exists public.children (
   user_id uuid unique references auth.users(id) on delete set null,
   name text not null check (char_length(name) between 1 and 20),
   avatar text not null default '⭐',
+  cover_image text,
   age smallint not null check (age between 3 and 18),
   balance integer not null default 0 check (balance >= 0),
   level integer not null default 1 check (level >= 1),
   created_at timestamptz not null default now()
 );
+
+-- 兼容已经建立过 children 表的项目：为儿童首页封面补充可空字段。
+alter table public.children add column if not exists cover_image text;
 
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
@@ -431,7 +435,7 @@ grant select on public.families to authenticated;
 grant update (name) on public.families to authenticated;
 grant select, update, delete on public.family_members to authenticated;
 grant select, delete on public.children to authenticated;
-grant update (name, avatar, age, user_id) on public.children to authenticated;
+grant update (name, avatar, cover_image, age, user_id) on public.children to authenticated;
 grant select, insert, update, delete on public.tasks to authenticated;
 grant select, insert on public.task_submissions to authenticated;
 grant select, insert, update, delete on public.rewards to authenticated;
@@ -446,8 +450,8 @@ exception when duplicate_object then null; end $$;
 
 -- 私有头像存储桶。对象路径必须为：家庭ID/文件名。
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
-values('child-avatars','child-avatars',false,2097152,array['image/jpeg','image/png','image/webp'])
-on conflict (id) do update set public=false,file_size_limit=2097152,allowed_mime_types=excluded.allowed_mime_types;
+values('child-avatars','child-avatars',false,5242880,array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set public=false,file_size_limit=5242880,allowed_mime_types=excluded.allowed_mime_types;
 
 create policy avatar_select on storage.objects for select to authenticated
 using (bucket_id='child-avatars' and public.is_family_member(((storage.foldername(name))[1])::uuid));
