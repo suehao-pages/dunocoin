@@ -192,7 +192,18 @@ function activeChild() { return state.data?.children.find(c => c.id === state.ac
 function taskSubmission(taskId) { return state.data.submissions.find(s => s.task_id === taskId && s.child_id === state.activeChildId && ["pending", "approved"].includes(s.status)); }
 function rewardRedemption(rewardId) { return state.data.redemptions.find(r => r.reward_id === rewardId && r.child_id === state.activeChildId && r.status === "pending"); }
 function childName(id) { return state.data.children.find(c => c.id === id)?.name || "孩子"; }
-function childAvatarMarkup(child) { return child?.avatar_url || /^data:image\//.test(child?.avatar || "") ? `<img src="${escapeHTML(child.avatar_url || child.avatar)}" alt="${escapeHTML(child.name)}的头像" />` : escapeHTML(child?.avatar || "⭐"); }
+function childAvatarSymbol(child) {
+  const avatar = String(child?.avatar || "");
+  const isImage = Boolean(child?.avatar_url) || avatar.startsWith("child-avatars/") || avatar.startsWith("data:image/") || /^https?:\/\//i.test(avatar);
+  return isImage ? "👤" : (avatar || "⭐");
+}
+function childAvatarMarkup(child) {
+  const inlineAvatar = /^data:image\//.test(child?.avatar || "") ? child.avatar : null;
+  const imageSource = child?.avatar_url || inlineAvatar;
+  return imageSource
+    ? `<img src="${escapeHTML(imageSource)}" alt="${escapeHTML(child.name)}的头像" />`
+    : escapeHTML(childAvatarSymbol(child));
+}
 function taskName(id) { return state.data.tasks.find(t => t.id === id)?.name || "任务"; }
 function rewardName(id) { return state.data.rewards.find(r => r.id === id)?.name || "奖励"; }
 function cycleLabel(cycle) { return ({ daily: "每日", weekly: "每周", custom: "自定义" })[cycle] || cycle || "自定义"; }
@@ -216,10 +227,10 @@ function renderHome() {
   const pending = state.data.submissions.filter(s => s.status === "pending" && (!isAdmin() || true));
   const tasks = state.data.tasks.filter(t => t.child_id === child.id && t.active).slice(0, 3);
   const ledger = state.data.ledger.filter(l => l.child_id === child.id).slice(0, 4);
-  const options = state.data.children.map(c => `<option value="${c.id}" ${c.id === child.id ? "selected" : ""}>${escapeHTML(c.avatar || "⭐")} ${escapeHTML(c.name)}</option>`).join("");
+  const options = state.data.children.map(c => `<option value="${c.id}" ${c.id === child.id ? "selected" : ""}>${escapeHTML(childAvatarSymbol(c))} ${escapeHTML(c.name)}</option>`).join("");
   return `
     <section class="hero-balance">
-      <div class="hero-top"><span class="hero-label">成长积分余额</span>${isAdmin() && state.data.children.length > 1 ? `<select class="child-switch" id="childSwitch">${options}</select>` : `<span class="level-chip">${escapeHTML(/^data:image\//.test(child.avatar || "") || child.avatar_url ? "👤" : child.avatar || "⭐")} ${escapeHTML(child.name)}</span>`}</div>
+      <div class="hero-top"><span class="hero-label">成长积分余额</span>${isAdmin() && state.data.children.length > 1 ? `<select class="child-switch" id="childSwitch" aria-label="切换儿童账户">${options}</select>` : `<span class="level-chip">${escapeHTML(childAvatarSymbol(child))} ${escapeHTML(child.name)}</span>`}</div>
       <div class="balance-number">${Number(child.balance || 0).toLocaleString()} <small>积分</small></div>
       <div class="balance-foot"><span>每一点，都是努力的见证</span><span class="level-chip">Lv.${child.level || Math.max(1, Math.floor((child.balance || 0) / 100) + 1)}</span></div>
     </section>
@@ -304,11 +315,22 @@ function emptyInline(icon, title) { return `<div class="empty-state"><div class=
 
 function openModal(title, body) {
   document.body.classList.add("modal-open");
-  $("#modalRoot").innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}" onclick="event.stopPropagation()"><header class="modal-head"><h2>${escapeHTML(title)}</h2><button class="close-btn" data-action="close-modal" aria-label="关闭">×</button></header><div class="modal-body">${body}</div></section></div>`;
+  $("#modalRoot").innerHTML = `<div class="modal-backdrop" data-modal-backdrop="true"><section class="modal" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}"><header class="modal-head"><h2>${escapeHTML(title)}</h2><button class="close-btn" type="button" data-action="close-modal" aria-label="关闭弹窗">×</button></header><div class="modal-body">${body}</div></section></div>`;
   icons();
   setTimeout(() => $("#modalRoot input, #modalRoot select, #modalRoot textarea")?.focus(), 50);
 }
 function closeModal() { $("#modalRoot").innerHTML = ""; document.body.classList.remove("modal-open"); }
+
+function fillForm(form, values) {
+  if (!form) return;
+  Object.entries(values).forEach(([name, value]) => {
+    const field = form.elements.namedItem(name);
+    if (!field) return;
+    field.value = value;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
 
 function showHelp() {
   openModal("小小成长银行怎么用？", `<div class="info-list">
@@ -493,6 +515,7 @@ async function deleteItem(table, id, collection, label) {
 }
 
 document.addEventListener("click", async event => {
+  if (event.target.matches("[data-modal-backdrop]")) { closeModal(); return; }
   const tab = event.target.closest("[data-auth-tab]");
   if (tab) {
     state.authMode = tab.dataset.authTab; $$("[data-auth-tab]").forEach(x => x.classList.toggle("active", x === tab)); $("#nameField").classList.toggle("hidden", state.authMode !== "signup"); $("#authSubmitText").textContent = state.authMode === "signup" ? "创建我的家庭" : "登录家庭"; $("#authForm [name=password]").autocomplete = state.authMode === "signup" ? "new-password" : "current-password"; return;
@@ -500,10 +523,22 @@ document.addEventListener("click", async event => {
   const page = event.target.closest("[data-page]"); if (page) { state.page = page.dataset.page; window.scrollTo({ top: 0, behavior: "instant" }); render(); return; }
   const filter = event.target.closest("[data-task-filter]"); if (filter) { state.taskFilter = filter.dataset.taskFilter; render(); return; }
   const copy = event.target.closest("[data-copy]"); if (copy) { await navigator.clipboard.writeText(copy.dataset.copy); toast("邀请链接已复制", "success"); return; }
-  const taskTemplate = event.target.closest("[data-task-template]"); if (taskTemplate) { const t = taskTemplates[Number(taskTemplate.dataset.taskTemplate)], form = taskTemplate.closest("form"); form.name.value = t[1]; form.description.value = t[2]; form.type.value = t[3]; form.reward_points.value = t[4]; form.icon.value = t[0]; return; }
-  const rewardTemplate = event.target.closest("[data-reward-template]"); if (rewardTemplate) { const t = rewardTemplates[Number(rewardTemplate.dataset.rewardTemplate)], form = rewardTemplate.closest("form"); form.name.value = t[1]; form.description.value = t[2]; form.cost_points.value = t[3]; form.emoji.value = t[0]; return; }
+  const taskTemplate = event.target.closest("[data-task-template]");
+  if (taskTemplate) {
+    const t = taskTemplates[Number(taskTemplate.dataset.taskTemplate)];
+    fillForm(taskTemplate.closest("form"), { name: t[1], description: t[2], type: t[3], reward_points: t[4], icon: t[0] });
+    $$("[data-task-template]", taskTemplate.parentElement).forEach(button => button.classList.toggle("selected", button === taskTemplate));
+    return;
+  }
+  const rewardTemplate = event.target.closest("[data-reward-template]");
+  if (rewardTemplate) {
+    const t = rewardTemplates[Number(rewardTemplate.dataset.rewardTemplate)];
+    fillForm(rewardTemplate.closest("form"), { name: t[1], description: t[2], cost_points: t[3], emoji: t[0] });
+    $$("[data-reward-template]", rewardTemplate.parentElement).forEach(button => button.classList.toggle("selected", button === rewardTemplate));
+    return;
+  }
   const el = event.target.closest("[data-action]"); if (!el) return; const action = el.dataset.action, id = el.dataset.id;
-  if (action === "close-modal") closeModal();
+  if (action === "close-modal") { closeModal(); return; }
   if (action === "show-help") showHelp();
   if (action === "add-child") showChildModal();
   if (action === "add-task") state.data.children.length ? showTaskModal() : showChildModal();

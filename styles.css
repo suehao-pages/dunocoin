@@ -175,7 +175,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .modal { width: min(100%, 570px); max-height: min(90dvh, 800px); margin: 0 auto; display: flex; flex-direction: column; border-radius: 28px 28px 0 0; background: white; box-shadow: 0 -16px 50px rgba(20,23,46,.18); animation: slide-up .25s cubic-bezier(.22,.8,.3,1); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 19px 20px 12px; border-bottom: 1px solid var(--line); }
 .modal-head h2 { margin: 0; font-size: 19px; }
-.close-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 20px; }
+.close-btn { position: relative; z-index: 3; width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 22px; line-height: 1; touch-action: manipulation; }
+.close-btn:hover { color: var(--ink); background: var(--primary-soft); }
 .modal-body { padding: 18px 20px max(24px, env(safe-area-inset-bottom)); overflow-y: auto; }
 .modal-form { display: grid; gap: 15px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -183,6 +184,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .template-scroller::-webkit-scrollbar { display: none; }
 .template-btn { flex: 0 0 auto; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: white; font-size: 11px; font-weight: 900; cursor: pointer; }
 .template-btn:hover { border-color: var(--primary); color: var(--primary); }
+.template-btn.selected { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 2px rgba(91,103,241,.08); }
 .helper { margin: -4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 10px; margin-top: 3px; }
 .modal-actions > * { flex: 1; }
