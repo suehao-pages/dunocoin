@@ -34,8 +34,8 @@ const demoData = () => {
     family: { id: "demo-family", name: "星星家庭" },
     membership: { role: "admin", display_name: "乐乐妈妈" },
     children: [
-      { id: childId, name: "乐乐", avatar: "🚀", cover_image: null, age: 9, balance: 286, level: 3 },
-      { id: "demo-child-2", name: "果果", avatar: "🌈", cover_image: null, age: 7, balance: 168, level: 2 }
+      { id: childId, name: "乐乐", avatar: "🚀", cover_image: null, cover_position_x: 50, cover_position_y: 50, age: 9, balance: 286, level: 3 },
+      { id: "demo-child-2", name: "果果", avatar: "🌈", cover_image: null, cover_position_x: 50, cover_position_y: 50, age: 7, balance: 168, level: 2 }
     ],
     tasks: [
       { id: task1, child_id: childId, name: "认真写作业", description: "放学后独立完成当天作业", type: "main", cycle: "daily", reward_points: 20, penalty_points: 10, icon: "📚", active: true },
@@ -211,6 +211,10 @@ function childAvatarMarkup(child) {
     : escapeHTML(childAvatarSymbol(child));
 }
 function childCoverSource(child) { return imageSource(child?.cover_image, child?.cover_url); }
+function childCoverPosition(child) {
+  const clamp = value => Math.min(100, Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 50));
+  return { x: clamp(child?.cover_position_x), y: clamp(child?.cover_position_y) };
+}
 function taskName(id) { return state.data.tasks.find(t => t.id === id)?.name || "任务"; }
 function rewardName(id) { return state.data.rewards.find(r => r.id === id)?.name || "奖励"; }
 function cycleLabel(cycle) { return ({ daily: "每日", weekly: "每周", custom: "自定义" })[cycle] || cycle || "自定义"; }
@@ -236,7 +240,8 @@ function renderHome() {
   const ledger = state.data.ledger.filter(l => l.child_id === child.id).slice(0, 4);
   const options = state.data.children.map(c => `<option value="${c.id}" ${c.id === child.id ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("");
   const cover = childCoverSource(child);
-  const heroStyle = cover ? ` style="--hero-cover:url('${escapeHTML(cover)}')"` : "";
+  const coverPosition = childCoverPosition(child);
+  const heroStyle = cover ? ` style="--hero-cover:url('${escapeHTML(cover)}');--hero-cover-position:${coverPosition.x}% ${coverPosition.y}%"` : "";
   const childSelector = `<div class="hero-child-selector"><span class="hero-child-avatar">${childAvatarMarkup(child)}</span>${isAdmin() && state.data.children.length > 1 ? `<select class="child-switch" id="childSwitch" aria-label="切换儿童账户">${options}</select>` : `<span class="hero-child-name">${escapeHTML(child.name)}</span>`}</div>`;
   return `
     <section class="hero-balance ${cover ? "has-cover" : ""}"${heroStyle}>
@@ -357,6 +362,7 @@ function showChildModal(child = null) {
   const editing = Boolean(child?.id);
   const previewChild = child || { name: "新账户", avatar: "🚀" };
   const cover = childCoverSource(previewChild);
+  const coverPosition = childCoverPosition(previewChild);
   const emojis = ["🚀", "🌈", "🦊", "🐼", "⚽", "🎨"];
   const emojiOptions = `${editing ? `<option value="" selected>保留当前头像</option>` : ""}${emojis.map(emoji => `<option value="${emoji}" ${!editing && emoji === "🚀" ? "selected" : ""}>${emoji}</option>`).join("")}`;
   openModal(editing ? "编辑儿童账户" : "开设儿童积分账户", `<form class="modal-form" data-form="child" data-id="${escapeHTML(child?.id || "")}">
@@ -366,7 +372,13 @@ function showChildModal(child = null) {
     <label class="field"><span>${editing ? "更换" : "上传"}头像（可选）</span><input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
     <p class="helper">支持 JPG、PNG、WebP，最大 2MB；上传照片后首页右上角会显示真实头像。</p>
     <label class="field"><span>${editing ? "更换" : "上传"}首页蓝色卡片封面（可选）</span><input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
-    <div class="cover-preview ${cover ? "has-image" : ""}" ${cover ? `style="background-image:linear-gradient(120deg,rgba(35,43,110,.35),rgba(45,54,140,.58)),url('${escapeHTML(cover)}')"` : ""}><span>${cover ? "当前首页封面" : "未上传时使用默认蓝色背景"}</span></div>
+    <div class="cover-preview ${cover ? "has-image" : ""}" ${cover ? `style="background-image:linear-gradient(120deg,rgba(35,43,110,.35),rgba(45,54,140,.58)),url('${escapeHTML(cover)}');background-position:${coverPosition.x}% ${coverPosition.y}%"` : ""}><span>${cover ? "当前首页封面" : "未上传时使用默认蓝色背景"}</span></div>
+    <div class="cover-position-controls ${cover ? "" : "hidden"}" data-cover-position-controls>
+      <div class="cover-position-head"><strong>调整封面位置</strong><button type="button" class="cover-center-btn" data-cover-center>恢复居中</button></div>
+      <label class="cover-position-row"><span>左右位置</span><input name="cover_position_x" type="range" min="0" max="100" step="1" value="${coverPosition.x}" /><output data-cover-x-value>${coverPosition.x}%</output></label>
+      <label class="cover-position-row"><span>上下位置</span><input name="cover_position_y" type="range" min="0" max="100" step="1" value="${coverPosition.y}" /><output data-cover-y-value>${coverPosition.y}%</output></label>
+      <p class="helper">拖动滑杆，把想保留的画面移动到封面中央，保存前可反复调整。</p>
+    </div>
     <p class="helper">建议使用横向照片，支持 JPG、PNG、WebP，最大 5MB。</p>
     ${editing && child?.cover_image ? `<label class="check-row"><input type="checkbox" name="remove_cover" value="yes" /> 恢复默认蓝色背景</label>` : ""}
     ${editing ? "" : `<label class="field"><span>初始积分 *</span><input name="balance" type="number" required min="0" max="100000" value="100" /></label><p class="helper">开户后初始积分会自动生成第一笔“开户积分”流水。</p>`}
@@ -482,7 +494,7 @@ async function saveChild(fd, id) {
   let coverImage = fd.remove_cover === "yes" ? null : (existing?.cover_image || null);
   if (avatarFile) avatar = await storeChildImage(avatarFile, "avatar");
   if (coverFile) coverImage = await storeChildImage(coverFile, "cover");
-  const profile = { name: fd.name.trim(), avatar, cover_image: coverImage, age: Number(fd.age) };
+  const profile = { name: fd.name.trim(), avatar, cover_image: coverImage, cover_position_x: Number(fd.cover_position_x || 50), cover_position_y: Number(fd.cover_position_y || 50), age: Number(fd.age) };
   if (state.demo) {
     if (existing) Object.assign(existing, profile, { avatar_url: null, cover_url: null });
     else {
@@ -495,7 +507,7 @@ async function saveChild(fd, id) {
   } else {
     const { data: childId, error } = await state.supabase.rpc("create_child_account", { p_name: profile.name, p_avatar: profile.avatar, p_age: profile.age, p_initial_balance: Number(fd.balance) });
     if (error) throw error;
-    if (coverImage) { const { error: coverError } = await state.supabase.from("children").update({ cover_image: coverImage }).eq("id", childId); if (coverError) throw coverError; }
+    if (coverImage) { const { error: coverError } = await state.supabase.from("children").update({ cover_image: coverImage, cover_position_x: profile.cover_position_x, cover_position_y: profile.cover_position_y }).eq("id", childId); if (coverError) throw coverError; }
   }
   closeModal(); await refresh(); toast(existing ? "儿童账户资料已更新" : "儿童成长账户已开设", "success");
 }
@@ -563,6 +575,21 @@ async function deleteItem(table, id, collection, label) {
   await refresh(); toast(`${label}已删除`);
 }
 
+function updateCoverPreviewPosition(form) {
+  if (!form) return;
+  const preview = $(".cover-preview", form);
+  const xInput = form.elements.namedItem("cover_position_x");
+  const yInput = form.elements.namedItem("cover_position_y");
+  if (!preview || !xInput || !yInput) return;
+  const x = Math.min(100, Math.max(0, Number(xInput.value) || 0));
+  const y = Math.min(100, Math.max(0, Number(yInput.value) || 0));
+  preview.style.backgroundPosition = `${x}% ${y}%`;
+  const xValue = $("[data-cover-x-value]", form);
+  const yValue = $("[data-cover-y-value]", form);
+  if (xValue) xValue.textContent = `${x}%`;
+  if (yValue) yValue.textContent = `${y}%`;
+}
+
 document.addEventListener("click", async event => {
   if (event.target.matches("[data-modal-backdrop]")) { closeModal(); return; }
   const tab = event.target.closest("[data-auth-tab]");
@@ -572,6 +599,16 @@ document.addEventListener("click", async event => {
   const page = event.target.closest("[data-page]"); if (page) { state.page = page.dataset.page; window.scrollTo({ top: 0, behavior: "instant" }); render(); return; }
   const filter = event.target.closest("[data-task-filter]"); if (filter) { state.taskFilter = filter.dataset.taskFilter; render(); return; }
   const copy = event.target.closest("[data-copy]"); if (copy) { await navigator.clipboard.writeText(copy.dataset.copy); toast("邀请链接已复制", "success"); return; }
+  const coverCenter = event.target.closest("[data-cover-center]");
+  if (coverCenter) {
+    const form = coverCenter.closest("[data-form=child]");
+    if (form) {
+      form.elements.namedItem("cover_position_x").value = "50";
+      form.elements.namedItem("cover_position_y").value = "50";
+      updateCoverPreviewPosition(form);
+    }
+    return;
+  }
   const taskTemplate = event.target.closest("[data-task-template]");
   if (taskTemplate) {
     const t = taskTemplates[Number(taskTemplate.dataset.taskTemplate)];
@@ -634,6 +671,7 @@ document.addEventListener("submit", async event => {
 
 document.addEventListener("input", event => {
   if (event.target.id === "scoreRange") { const pct = Number(event.target.value), reward = Number(event.target.dataset.reward); $("#scoreValue").textContent = `${pct}%`; $("#scorePoints").textContent = Math.round(reward * pct / 100); }
+  if (event.target.name === "cover_position_x" || event.target.name === "cover_position_y") updateCoverPreviewPosition(event.target.closest("[data-form=child]"));
 });
 document.addEventListener("change", event => {
   if (event.target.id === "childSwitch") { state.activeChildId = event.target.value; render(); return; }
@@ -649,11 +687,16 @@ document.addEventListener("change", event => {
   }
   if (event.target.name === "cover_file" && event.target.files?.[0]) {
     const preview = $(".cover-preview", form);
+    const controls = $("[data-cover-position-controls]", form);
     if (preview) { preview.classList.add("has-image"); preview.style.backgroundImage = `linear-gradient(120deg,rgba(35,43,110,.35),rgba(45,54,140,.58)),url('${URL.createObjectURL(event.target.files[0])}')`; $("span", preview).textContent = "新封面预览"; }
+    if (controls) controls.classList.remove("hidden");
+    updateCoverPreviewPosition(form);
   }
   if (event.target.name === "remove_cover") {
     const preview = $(".cover-preview", form);
+    const controls = $("[data-cover-position-controls]", form);
     if (preview && event.target.checked) { preview.classList.remove("has-image"); preview.style.backgroundImage = ""; $("span", preview).textContent = "保存后恢复默认蓝色背景"; }
+    if (controls) controls.classList.toggle("hidden", event.target.checked);
   }
 });
 $("#demoLogin").addEventListener("click", () => { state.demo = true; state.data = demoData(); state.activeChildId = state.data.children[0].id; showApp(); toast("已进入演示家庭，数据仅保存在本次页面", "success"); });
