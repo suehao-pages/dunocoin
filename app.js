@@ -68,6 +68,7 @@ const state = {
   authMode: "login",
   page: "home",
   taskFilter: "all",
+  ledgerWindow: "all",
   activeChildId: null,
   session: null,
   data: null
@@ -140,6 +141,17 @@ async function bootSession(session) {
   }
 }
 
+async function loadAllLedger(sb, familyId) {
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await sb.from("point_ledger").select("*").eq("family_id", familyId).order("created_at", { ascending: false }).range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    rows.push(...data);
+    if (data.length < pageSize) return { data: rows, error: null };
+  }
+}
+
 async function loadRemoteData() {
   const sb = state.supabase;
   const userId = state.session.user.id;
@@ -155,7 +167,7 @@ async function loadRemoteData() {
     sb.from("task_submissions").select("*").eq("family_id", familyId).order("submitted_at", { ascending: false }),
     sb.from("rewards").select("*").eq("family_id", familyId).order("created_at", { ascending: false }),
     sb.from("reward_redemptions").select("*").eq("family_id", familyId).order("created_at", { ascending: false }),
-    sb.from("point_ledger").select("*").eq("family_id", familyId).order("created_at", { ascending: false }).limit(100),
+    loadAllLedger(sb, familyId),
     sb.from("family_members").select("id,display_name,role,user_id,created_at").eq("family_id", familyId).order("created_at")
   ]);
   queries.forEach(q => { if (q.error) throw q.error; });
@@ -215,6 +227,29 @@ function childCoverPosition(child) {
   const clamp = value => Math.min(100, Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 50));
   return { x: clamp(child?.cover_position_x), y: clamp(child?.cover_position_y) };
 }
+function ledgerWindowStart(windowName, now = new Date()) {
+  if (windowName === "month") {
+    const start = new Date(now);
+    start.setMonth(start.getMonth() - 1);
+    return start;
+  }
+  if (windowName === "week") {
+    const start = new Date(now);
+    const daysSinceMonday = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - daysSinceMonday);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  return null;
+}
+function ledgerItems(childId, windowName = state.ledgerWindow) {
+  const start = ledgerWindowStart(windowName);
+  return state.data.ledger.filter(item => (!childId || item.child_id === childId) && (!start || new Date(item.created_at) >= start));
+}
+function ledgerWindowLabel(windowName = state.ledgerWindow) { return ({ all: "全部", month: "最近一个月", week: "本周" })[windowName] || "全部"; }
+function ledgerWindowControls() {
+  return `<div class="ledger-window-tabs" role="group" aria-label="积分记录时间范围">${[["week", "本周"], ["month", "最近一个月"], ["all", "全部"]].map(([value, label]) => `<button type="button" class="ledger-window-btn ${state.ledgerWindow === value ? "active" : ""}" data-ledger-window="${value}">${label}</button>`).join("")}</div>`;
+}
 function taskName(id) { return state.data.tasks.find(t => t.id === id)?.name || "任务"; }
 function rewardName(id) { return state.data.rewards.find(r => r.id === id)?.name || "奖励"; }
 function cycleLabel(cycle) { return ({ daily: "每日", weekly: "每周", custom: "自定义" })[cycle] || cycle || "自定义"; }
@@ -237,7 +272,12 @@ function renderHome() {
   if (!child) return `<div class="page-title"><div><h2>欢迎回家</h2><p>先为孩子开设第一个成长账户</p></div></div>${empty("user-plus", "还没有儿童账户", "开户后即可创建任务、记录积分和兑换奖励。", isAdmin() ? "开设账户" : "等待管理员开户", "add-child")}`;
   const pending = state.data.submissions.filter(s => s.status === "pending" && (!isAdmin() || true));
   const tasks = state.data.tasks.filter(t => t.child_id === child.id && t.active).slice(0, 3);
-  const ledger = state.data.ledger.filter(l => l.child_id === child.id).slice(0, 4);
+  const filteredLedger = ledgerItems(child.id);
+  const ledger = filteredLedger.slice(0, 4);
+  const windowTotal = filteredLedger.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const showingAllLedger = state.ledgerWindow === "all";
+  const heroValue = showingAllLedger ? Number(child.balance || 0) : windowTotal;
+  const heroLabel = showingAllLedger ? "成长积分余额" : `${ledgerWindowLabel()}积分净变化`;
   const options = state.data.children.map(c => `<option value="${c.id}" ${c.id === child.id ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("");
   const cover = childCoverSource(child);
   const coverPosition = childCoverPosition(child);
@@ -245,9 +285,9 @@ function renderHome() {
   const childSelector = `<div class="hero-child-selector"><span class="hero-child-avatar">${childAvatarMarkup(child)}</span>${isAdmin() && state.data.children.length > 1 ? `<select class="child-switch" id="childSwitch" aria-label="切换儿童账户">${options}</select>` : `<span class="hero-child-name">${escapeHTML(child.name)}</span>`}</div>`;
   return `
     <section class="hero-balance ${cover ? "has-cover" : ""}"${heroStyle}>
-      <div class="hero-top"><span class="hero-label">成长积分余额</span>${childSelector}</div>
-      <div class="balance-number">${Number(child.balance || 0).toLocaleString()} <small>积分</small></div>
-      <div class="balance-foot"><span>每一点，都是努力的见证</span><span class="level-chip">Lv.${child.level || Math.max(1, Math.floor((child.balance || 0) / 100) + 1)}</span></div>
+      <div class="hero-top"><span class="hero-label">${heroLabel}</span>${childSelector}</div>
+      <div class="balance-number">${!showingAllLedger && heroValue > 0 ? "+" : ""}${heroValue.toLocaleString()} <small>积分</small></div>
+      <div class="balance-foot"><span>${showingAllLedger ? "每一点，都是努力的见证" : `当前余额 ${Number(child.balance || 0).toLocaleString()} 积分`}</span><span class="level-chip">Lv.${child.level || Math.max(1, Math.floor((child.balance || 0) / 100) + 1)}</span></div>
     </section>
     <div class="quick-grid">
       ${isAdmin() ? quick("plus-circle", "存入积分", "adjust-points", "tone-green") : quick("check-circle-2", "提交任务", "go-tasks", "tone-green")}
@@ -258,7 +298,8 @@ function renderHome() {
     <section class="section"><div class="section-head"><div><h2>今天的任务</h2><p>${tasks.length ? "稳稳完成，一点点变优秀" : "今天还没有安排"}</p></div><button class="link-btn" data-page="tasks">查看全部</button></div>
       <div class="card list-card">${tasks.length ? tasks.map(task => taskRow(task)).join("") : emptyInline("calendar-check", "暂无任务")}</div>
     </section>
-    <section class="section"><div class="section-head"><div><h2>最近积分</h2><p>每一笔变化都有记录</p></div><button class="link-btn" data-action="show-ledger">全部流水</button></div>
+    <section class="section"><div class="section-head"><div><h2>最近积分</h2><p>${ledgerWindowLabel()} · 净变化 ${windowTotal >= 0 ? "+" : ""}${windowTotal}</p></div><button class="link-btn" data-action="show-ledger">全部流水</button></div>
+      ${ledgerWindowControls()}
       <div class="card list-card">${ledger.length ? ledger.map(ledgerRow).join("") : emptyInline("receipt-text", "暂无积分记录")}</div>
     </section>`;
 }
@@ -269,7 +310,12 @@ function taskRow(task) {
   const status = sub?.status === "pending" ? "待审核" : sub?.status === "approved" ? "已完成" : "进行中";
   return `<div class="list-row"><div class="row-icon ${task.type === "main" ? "tone-purple" : "tone-green"}">${escapeHTML(task.icon || (task.type === "main" ? "🎯" : "✨"))}</div><div class="row-main"><h3>${escapeHTML(task.name)}</h3><p>${cycleLabel(task.cycle)} · ${status}</p></div><div class="row-value positive">+${task.reward_points}<small>积分赏金</small></div></div>`;
 }
-function ledgerRow(item) { return `<div class="list-row"><div class="row-icon ${item.amount >= 0 ? "tone-green" : "tone-red"}"><i data-lucide="${item.amount >= 0 ? "arrow-down-left" : "arrow-up-right"}"></i></div><div class="row-main"><h3>${escapeHTML(item.description)}</h3><p>${fmtTime(item.created_at)}</p></div><div class="row-value ${item.amount >= 0 ? "positive" : "negative"}">${item.amount >= 0 ? "+" : ""}${item.amount}<small>余额 ${item.balance_after}</small></div></div>`; }
+function ledgerRow(item, manage = false) {
+  const corrected = state.data.ledger.some(row => row.reference_ledger_id === item.id);
+  const manageable = manage && isAdmin() && item.source_type === "manual" && !corrected;
+  const amount = Number(item.amount || 0);
+  return `<div class="ledger-entry ${corrected ? "is-corrected" : ""}"><div class="list-row"><div class="row-icon ${amount >= 0 ? "tone-green" : "tone-red"}"><i data-lucide="${amount >= 0 ? "arrow-down-left" : "arrow-up-right"}"></i></div><div class="row-main"><h3>${escapeHTML(item.description)}${corrected ? ` <span class="ledger-status">已更正</span>` : ""}</h3><p>${fmtTime(item.created_at)}</p></div><div class="row-value ${amount >= 0 ? "positive" : "negative"}">${amount >= 0 ? "+" : ""}${amount}<small>余额 ${item.balance_after}</small></div></div>${manageable ? `<div class="ledger-entry-actions"><button type="button" data-action="edit-ledger" data-id="${item.id}">编辑调整</button><button type="button" class="danger" data-action="void-ledger" data-id="${item.id}">删除</button></div>` : ""}</div>`;
+}
 
 function renderTasks() {
   const filters = [["all", "全部"], ["main", "主线任务"], ["assist", "辅助任务"], ["pending", "待审核"]];
@@ -431,8 +477,19 @@ function showRedemptionReview(redemption) {
 
 function showLedger() {
   const c = activeChild();
-  const items = state.data.ledger.filter(l => !c || l.child_id === c.id);
-  openModal(`${c?.name || "孩子"}的积分流水`, `<div class="card list-card">${items.length ? items.map(ledgerRow).join("") : emptyInline("receipt-text", "暂无积分记录")}</div>`);
+  const items = ledgerItems(c?.id);
+  const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  openModal(`${c?.name || "孩子"}的积分流水`, `<div class="modal-form" data-ledger-modal><div class="ledger-summary"><span>${ledgerWindowLabel()}积分净变化</span><strong class="${total >= 0 ? "positive" : "negative"}">${total >= 0 ? "+" : ""}${total}</strong></div>${ledgerWindowControls()}<p class="helper">仅手动存入或扣除的流水可编辑调整或删除；任务、兑换和开户流水保持只读，确保成长记录完整。</p><div class="card list-card">${items.length ? items.map(item => ledgerRow(item, true)).join("") : emptyInline("receipt-text", "当前时间范围暂无积分记录")}</div></div>`);
+}
+
+function showLedgerCorrection(item, voiding = false) {
+  if (!item || item.source_type !== "manual") return toast("只有手动积分流水可以调整", "error");
+  const child = state.data.children.find(row => row.id === item.child_id);
+  if (voiding) {
+    openModal("删除积分流水", `<form class="modal-form" data-form="ledger-correction" data-id="${item.id}"><input type="hidden" name="void_entry" value="yes" /><div class="info-item"><span class="info-num">删</span><div><strong>${escapeHTML(item.description)}</strong><p>${item.amount >= 0 ? "+" : ""}${item.amount} 积分 · ${fmtTime(item.created_at)}</p></div></div><p class="helper">确认后会从余额中抵消这笔积分，并生成冲正记录；原始账目会标记为“已更正”，确保历史可追溯。当前余额：${child?.balance || 0} 积分。</p><div class="modal-actions"><button type="button" class="ghost-btn" data-action="show-ledger">取消</button><button type="submit" class="danger-btn">确认删除</button></div></form>`);
+    return;
+  }
+  openModal("修改积分流水", `<form class="modal-form" data-form="ledger-correction" data-id="${item.id}"><div class="info-item"><span class="info-num">改</span><div><strong>原记录：${item.amount >= 0 ? "+" : ""}${item.amount} 积分</strong><p>${escapeHTML(item.description)} · 当前余额 ${child?.balance || 0}</p></div></div><label class="field"><span>修正后的积分 *</span><input name="amount" type="number" required min="-100000" max="100000" value="${item.amount}" /></label><p class="helper">正数代表存入，负数代表扣除，不能填写 0。</p><label class="field"><span>修正后的说明 *</span><input name="description" required maxlength="120" value="${escapeHTML(item.description)}" /></label><div class="modal-actions"><button type="button" class="ghost-btn" data-action="show-ledger">取消</button><button type="submit" class="primary-btn">保存修正</button></div></form>`);
 }
 
 function showInvite() {
@@ -459,6 +516,7 @@ async function handleForm(form) {
     if (type === "task") await saveTask(fd, form.dataset.id);
     if (type === "reward") await saveReward(fd, form.dataset.id);
     if (type === "points") await adjustPoints(fd);
+    if (type === "ledger-correction") await correctLedger(fd, form.dataset.id);
     if (type === "submission") await submitTask(form.dataset.id, fd.note);
     if (type === "review-task") await reviewTask(form.dataset.id, fd);
     if (type === "invite") await createInvite(fd);
@@ -534,6 +592,29 @@ async function adjustPoints(fd) {
   } else { const { error } = await state.supabase.rpc("adjust_child_points", { p_child_id: fd.child_id, p_amount: amount, p_description: fd.description.trim() }); if (error) throw error; }
   closeModal(); await refresh(); toast(amount > 0 ? "积分已存入" : "积分已扣除", "success");
 }
+async function correctLedger(fd, ledgerId) {
+  const item = state.data.ledger.find(row => row.id === ledgerId);
+  if (!item || item.source_type !== "manual") throw new Error("只有手动积分流水可以调整");
+  const voiding = fd.void_entry === "yes";
+  const newAmount = voiding ? 0 : Number(fd.amount);
+  if (!voiding && (!Number.isFinite(newAmount) || newAmount === 0 || Math.abs(newAmount) > 100000)) throw new Error("修正积分必须为 -100000 到 100000 之间的非零整数");
+  const description = voiding ? item.description : fd.description.trim();
+  if (state.demo) {
+    if (state.data.ledger.some(row => row.reference_ledger_id === item.id)) throw new Error("这笔流水已经更正过了");
+    const child = state.data.children.find(row => row.id === item.child_id);
+    const delta = newAmount - Number(item.amount);
+    if (child.balance + delta < 0) throw new Error("更正后积分余额不能小于 0");
+    child.balance += delta;
+    child.level = Math.max(1, Math.floor(child.balance / 100) + 1);
+    state.data.ledger.unshift({ id: uid(), child_id: child.id, amount: delta, balance_after: child.balance, source_type: "reversal", description: voiding ? `撤销：${item.description}` : `更正为 ${newAmount >= 0 ? "+" : ""}${newAmount}：${description}`, reference_ledger_id: item.id, created_at: new Date().toISOString() });
+  } else {
+    const { error } = await state.supabase.rpc("correct_manual_ledger", { p_ledger_id: ledgerId, p_new_amount: newAmount, p_new_description: description, p_void: voiding });
+    if (error) throw error;
+  }
+  closeModal();
+  await refresh();
+  toast(voiding ? "流水已删除，并生成冲正记录" : "流水已修正，并保留原始记录", "success");
+}
 async function submitTask(taskId, note) {
   const task = state.data.tasks.find(t => t.id === taskId); const row = { id: uid(), family_id: state.data.family.id, task_id: taskId, child_id: task.child_id, due_date: today(), status: "pending", note: note?.trim(), submitted_at: new Date().toISOString() };
   if (state.demo) state.data.submissions.unshift(row); else { const { error } = await state.supabase.from("task_submissions").insert(row); if (error) throw error; }
@@ -599,6 +680,12 @@ document.addEventListener("click", async event => {
   const page = event.target.closest("[data-page]"); if (page) { state.page = page.dataset.page; window.scrollTo({ top: 0, behavior: "instant" }); render(); return; }
   const filter = event.target.closest("[data-task-filter]"); if (filter) { state.taskFilter = filter.dataset.taskFilter; render(); return; }
   const copy = event.target.closest("[data-copy]"); if (copy) { await navigator.clipboard.writeText(copy.dataset.copy); toast("邀请链接已复制", "success"); return; }
+  const ledgerWindow = event.target.closest("[data-ledger-window]");
+  if (ledgerWindow) {
+    state.ledgerWindow = ledgerWindow.dataset.ledgerWindow;
+    if (ledgerWindow.closest("[data-ledger-modal]")) showLedger(); else render();
+    return;
+  }
   const coverCenter = event.target.closest("[data-cover-center]");
   if (coverCenter) {
     const form = coverCenter.closest("[data-form=child]");
@@ -645,6 +732,8 @@ document.addEventListener("click", async event => {
   if (action === "reject-redemption") await reviewRedemption(id, false);
   if (action === "show-reviews") showReviews();
   if (action === "show-ledger") showLedger();
+  if (action === "edit-ledger") showLedgerCorrection(state.data.ledger.find(item => item.id === id));
+  if (action === "void-ledger") showLedgerCorrection(state.data.ledger.find(item => item.id === id), true);
   if (action === "invite-member") showInvite();
   if (action === "go-tasks") { state.page = "tasks"; window.scrollTo({ top: 0, behavior: "instant" }); render(); }
   if (action === "go-rewards") { state.page = "rewards"; window.scrollTo({ top: 0, behavior: "instant" }); render(); }
