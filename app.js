@@ -34,8 +34,8 @@ const demoData = () => {
     family: { id: "demo-family", name: "星星家庭" },
     membership: { role: "admin", display_name: "乐乐妈妈" },
     children: [
-      { id: childId, name: "乐乐", avatar: "🚀", age: 9, balance: 286, level: 3 },
-      { id: "demo-child-2", name: "果果", avatar: "🌈", age: 7, balance: 168, level: 2 }
+      { id: childId, name: "乐乐", avatar: "🚀", cover_image: null, age: 9, balance: 286, level: 3 },
+      { id: "demo-child-2", name: "果果", avatar: "🌈", cover_image: null, age: 7, balance: 168, level: 2 }
     ],
     tasks: [
       { id: task1, child_id: childId, name: "认真写作业", description: "放学后独立完成当天作业", type: "main", cycle: "daily", reward_points: 20, penalty_points: 10, icon: "📚", active: true },
@@ -160,12 +160,15 @@ async function loadRemoteData() {
   ]);
   queries.forEach(q => { if (q.error) throw q.error; });
   const remoteChildren = queries[0].data;
+  const signedImageUrl = async value => {
+    if (!value?.startsWith("child-avatars/")) return null;
+    const objectPath = value.slice("child-avatars/".length);
+    const { data: signed } = await sb.storage.from("child-avatars").createSignedUrl(objectPath, 3600);
+    return signed?.signedUrl || null;
+  };
   await Promise.all(remoteChildren.map(async child => {
-    if (child.avatar?.startsWith("child-avatars/")) {
-      const objectPath = child.avatar.slice("child-avatars/".length);
-      const { data: signed } = await sb.storage.from("child-avatars").createSignedUrl(objectPath, 3600);
-      child.avatar_url = signed?.signedUrl || null;
-    }
+    child.avatar_url = await signedImageUrl(child.avatar);
+    child.cover_url = await signedImageUrl(child.cover_image);
   }));
   state.data = {
     family: membership.families,
@@ -197,13 +200,17 @@ function childAvatarSymbol(child) {
   const isImage = Boolean(child?.avatar_url) || avatar.startsWith("child-avatars/") || avatar.startsWith("data:image/") || /^https?:\/\//i.test(avatar);
   return isImage ? "👤" : (avatar || "⭐");
 }
+function imageSource(value, signedValue) {
+  const raw = String(value || "");
+  return signedValue || (/^data:image\//.test(raw) || /^https?:\/\//i.test(raw) ? raw : null);
+}
 function childAvatarMarkup(child) {
-  const inlineAvatar = /^data:image\//.test(child?.avatar || "") ? child.avatar : null;
-  const imageSource = child?.avatar_url || inlineAvatar;
-  return imageSource
-    ? `<img src="${escapeHTML(imageSource)}" alt="${escapeHTML(child.name)}的头像" />`
+  const source = imageSource(child?.avatar, child?.avatar_url);
+  return source
+    ? `<img src="${escapeHTML(source)}" alt="${escapeHTML(child.name)}的头像" />`
     : escapeHTML(childAvatarSymbol(child));
 }
+function childCoverSource(child) { return imageSource(child?.cover_image, child?.cover_url); }
 function taskName(id) { return state.data.tasks.find(t => t.id === id)?.name || "任务"; }
 function rewardName(id) { return state.data.rewards.find(r => r.id === id)?.name || "奖励"; }
 function cycleLabel(cycle) { return ({ daily: "每日", weekly: "每周", custom: "自定义" })[cycle] || cycle || "自定义"; }
@@ -211,7 +218,7 @@ function greeting() { const h = new Date().getHours(); return h < 6 ? "夜深了
 
 function render() {
   if (!state.data) return;
-  $("#greeting").textContent = greeting();
+  $("#greeting").textContent = `${greeting()} · dunocoin`;
   $("#familyName").textContent = state.data.family.name;
   $("#profileInitial").textContent = (state.data.membership.display_name || "家").slice(-1);
   $$(".admin-only").forEach(el => el.classList.toggle("hidden", !isAdmin()));
@@ -227,10 +234,13 @@ function renderHome() {
   const pending = state.data.submissions.filter(s => s.status === "pending" && (!isAdmin() || true));
   const tasks = state.data.tasks.filter(t => t.child_id === child.id && t.active).slice(0, 3);
   const ledger = state.data.ledger.filter(l => l.child_id === child.id).slice(0, 4);
-  const options = state.data.children.map(c => `<option value="${c.id}" ${c.id === child.id ? "selected" : ""}>${escapeHTML(childAvatarSymbol(c))} ${escapeHTML(c.name)}</option>`).join("");
+  const options = state.data.children.map(c => `<option value="${c.id}" ${c.id === child.id ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("");
+  const cover = childCoverSource(child);
+  const heroStyle = cover ? ` style="--hero-cover:url('${escapeHTML(cover)}')"` : "";
+  const childSelector = `<div class="hero-child-selector"><span class="hero-child-avatar">${childAvatarMarkup(child)}</span>${isAdmin() && state.data.children.length > 1 ? `<select class="child-switch" id="childSwitch" aria-label="切换儿童账户">${options}</select>` : `<span class="hero-child-name">${escapeHTML(child.name)}</span>`}</div>`;
   return `
-    <section class="hero-balance">
-      <div class="hero-top"><span class="hero-label">成长积分余额</span>${isAdmin() && state.data.children.length > 1 ? `<select class="child-switch" id="childSwitch" aria-label="切换儿童账户">${options}</select>` : `<span class="level-chip">${escapeHTML(childAvatarSymbol(child))} ${escapeHTML(child.name)}</span>`}</div>
+    <section class="hero-balance ${cover ? "has-cover" : ""}"${heroStyle}>
+      <div class="hero-top"><span class="hero-label">成长积分余额</span>${childSelector}</div>
       <div class="balance-number">${Number(child.balance || 0).toLocaleString()} <small>积分</small></div>
       <div class="balance-foot"><span>每一点，都是努力的见证</span><span class="level-chip">Lv.${child.level || Math.max(1, Math.floor((child.balance || 0) / 100) + 1)}</span></div>
     </section>
@@ -305,7 +315,7 @@ function renderFamily() {
   const pendingRewards = state.data.redemptions.filter(r => r.status === "pending").length;
   return `<div class="page-title"><div><h2>我的家庭</h2><p>${escapeHTML(state.data.family.name)} · ${state.data.members.length} 位成员</p></div>${isAdmin() ? `<button class="primary-btn" data-action="invite-member"><i data-lucide="user-plus"></i> 邀请</button>` : ""}</div>
     <div class="stats-grid"><div class="card stat-card"><strong>${state.data.children.length}</strong><span>儿童账户</span></div><div class="card stat-card"><strong>${pendingTasks}</strong><span>任务待审核</span></div><div class="card stat-card"><strong>${pendingRewards}</strong><span>兑换待审核</span></div></div>
-    <section class="section"><div class="section-head"><div><h2>儿童账户</h2><p>独立余额与完整流水</p></div>${isAdmin() ? `<button class="link-btn" data-action="add-child">＋ 开户</button>` : ""}</div><div class="child-grid">${state.data.children.length ? state.data.children.map(c => `<article class="card child-card"><div class="child-avatar">${childAvatarMarkup(c)}</div><div><h3>${escapeHTML(c.name)}</h3><p>${c.age || "–"} 岁 · Lv.${c.level || 1}</p></div><div class="child-balance">${c.balance || 0}<small>积分余额</small></div></article>`).join("") : emptyInline("user-plus", "暂无儿童账户")}</div></section>
+    <section class="section"><div class="section-head"><div><h2>儿童账户</h2><p>独立余额、头像与首页封面</p></div>${isAdmin() ? `<button class="link-btn" data-action="add-child">＋ 开户</button>` : ""}</div><div class="child-grid">${state.data.children.length ? state.data.children.map(c => `<article class="card child-card"><div class="child-avatar">${childAvatarMarkup(c)}</div><div class="child-card-copy"><h3>${escapeHTML(c.name)}</h3><p>${c.age || "–"} 岁 · Lv.${c.level || 1}</p></div><div class="child-card-side"><div class="child-balance">${c.balance || 0}<small>积分余额</small></div>${isAdmin() ? `<button class="child-edit-btn" type="button" data-action="edit-child" data-id="${c.id}" aria-label="编辑${escapeHTML(c.name)}的账户"><i data-lucide="pencil"></i> 编辑</button>` : ""}</div></article>`).join("") : emptyInline("user-plus", "暂无儿童账户")}</div></section>
     <section class="section"><div class="section-head"><div><h2>家庭成员</h2><p>管理员与儿童权限严格区分</p></div></div><div class="card list-card">${state.data.members.map(m => `<div class="list-row member-row"><div class="avatar">${escapeHTML((m.display_name || "家").slice(-1))}</div><div class="row-main"><h3>${escapeHTML(m.display_name || "家庭成员")}</h3><p>${m.role === "admin" ? "可管理家庭全部内容" : "仅可查看和提交申请"}</p></div><span class="role-pill">${m.role === "admin" ? "管理员" : "儿童"}</span></div>`).join("")}</div></section>
     ${isAdmin() && (pendingTasks || pendingRewards) ? `<section class="section"><button class="primary-btn full" data-action="show-reviews">处理 ${pendingTasks + pendingRewards} 条待审核申请</button></section>` : ""}`;
 }
@@ -333,7 +343,7 @@ function fillForm(form, values) {
 }
 
 function showHelp() {
-  openModal("小小成长银行怎么用？", `<div class="info-list">
+  openModal("dunocoin 怎么用？", `<div class="info-list">
     ${info("1", "开设成长账户", "管理员为每个孩子建立独立积分账户，余额和流水互不混淆。")}
     ${info("2", "安排成长任务", "主线任务未完成可扣分，辅助任务自愿参与，只奖励不惩罚。")}
     ${info("3", "提交与审核", "孩子提交完成状态，家长按 0%–100% 评分，系统按比例自动结算积分。")}
@@ -343,8 +353,25 @@ function showHelp() {
 }
 function info(num, title, text) { return `<div class="info-item"><span class="info-num">${num}</span><div><strong>${title}</strong><p>${text}</p></div></div>`; }
 
-function showChildModal() {
-  openModal("开设儿童积分账户", `<form class="modal-form" data-form="child"><label class="field"><span>儿童姓名 *</span><input name="name" required maxlength="20" placeholder="例如：乐乐" /></label><div class="form-grid"><label class="field"><span>预设头像</span><select name="avatar"><option>🚀</option><option>🌈</option><option>🦊</option><option>🐼</option><option>⚽</option><option>🎨</option></select></label><label class="field"><span>年龄 *</span><input name="age" type="number" required min="3" max="18" value="8" /></label></div><label class="field"><span>上传头像（可选）</span><input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp" /></label><p class="helper">支持 JPG、PNG、WebP，最大 2MB；上传图片会替代预设头像。</p><label class="field"><span>初始积分 *</span><input name="balance" type="number" required min="0" max="100000" value="100" /></label><p class="helper">开户后初始积分会自动生成第一笔“开户积分”流水。</p><div class="modal-actions"><button type="button" class="ghost-btn" data-action="close-modal">取消</button><button class="primary-btn" type="submit">确认开户</button></div></form>`);
+function showChildModal(child = null) {
+  const editing = Boolean(child?.id);
+  const previewChild = child || { name: "新账户", avatar: "🚀" };
+  const cover = childCoverSource(previewChild);
+  const emojis = ["🚀", "🌈", "🦊", "🐼", "⚽", "🎨"];
+  const emojiOptions = `${editing ? `<option value="" selected>保留当前头像</option>` : ""}${emojis.map(emoji => `<option value="${emoji}" ${!editing && emoji === "🚀" ? "selected" : ""}>${emoji}</option>`).join("")}`;
+  openModal(editing ? "编辑儿童账户" : "开设儿童积分账户", `<form class="modal-form" data-form="child" data-id="${escapeHTML(child?.id || "")}">
+    <div class="child-profile-preview"><div class="child-avatar large">${childAvatarMarkup(previewChild)}</div><div><strong>${escapeHTML(child?.name || "新儿童账户")}</strong><p>${editing ? "修改资料不会影响现有积分和流水" : "设置专属头像与首页封面"}</p></div></div>
+    <label class="field"><span>儿童姓名 *</span><input name="name" required maxlength="20" value="${escapeHTML(child?.name || "")}" placeholder="例如：乐乐" /></label>
+    <div class="form-grid"><label class="field"><span>预设头像</span><select name="avatar">${emojiOptions}</select></label><label class="field"><span>年龄 *</span><input name="age" type="number" required min="3" max="18" value="${child?.age || 8}" /></label></div>
+    <label class="field"><span>${editing ? "更换" : "上传"}头像（可选）</span><input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+    <p class="helper">支持 JPG、PNG、WebP，最大 2MB；上传照片后首页右上角会显示真实头像。</p>
+    <label class="field"><span>${editing ? "更换" : "上传"}首页蓝色卡片封面（可选）</span><input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+    <div class="cover-preview ${cover ? "has-image" : ""}" ${cover ? `style="background-image:linear-gradient(120deg,rgba(35,43,110,.35),rgba(45,54,140,.58)),url('${escapeHTML(cover)}')"` : ""}><span>${cover ? "当前首页封面" : "未上传时使用默认蓝色背景"}</span></div>
+    <p class="helper">建议使用横向照片，支持 JPG、PNG、WebP，最大 5MB。</p>
+    ${editing && child?.cover_image ? `<label class="check-row"><input type="checkbox" name="remove_cover" value="yes" /> 恢复默认蓝色背景</label>` : ""}
+    ${editing ? "" : `<label class="field"><span>初始积分 *</span><input name="balance" type="number" required min="0" max="100000" value="100" /></label><p class="helper">开户后初始积分会自动生成第一笔“开户积分”流水。</p>`}
+    <div class="modal-actions"><button type="button" class="ghost-btn" data-action="close-modal">取消</button><button class="primary-btn" type="submit">${editing ? "保存资料" : "确认开户"}</button></div>
+  </form>`);
 }
 
 function showTaskModal(task = {}) {
@@ -416,7 +443,7 @@ async function handleForm(form) {
   const submit = form.querySelector("button[type=submit]");
   if (submit) submit.disabled = true;
   try {
-    if (type === "child") await createChild(fd);
+    if (type === "child") await saveChild(fd, form.dataset.id);
     if (type === "task") await saveTask(fd, form.dataset.id);
     if (type === "reward") await saveReward(fd, form.dataset.id);
     if (type === "points") await adjustPoints(fd);
@@ -429,26 +456,48 @@ async function handleForm(form) {
   }
 }
 
-async function createChild(fd) {
-  const file = fd.avatar_file instanceof File && fd.avatar_file.size ? fd.avatar_file : null;
-  if (file && file.size > 2 * 1024 * 1024) throw new Error("头像文件不能超过 2MB");
-  let avatar = fd.avatar;
-  if (file && state.demo) avatar = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
-  if (file && !state.demo) {
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const objectPath = `${state.data.family.id}/${uid()}.${ext}`;
-    const { error: uploadError } = await state.supabase.storage.from("child-avatars").upload(objectPath, file, { contentType: file.type, upsert: false });
-    if (uploadError) throw uploadError;
-    avatar = `child-avatars/${objectPath}`;
-  }
-  const row = { id: uid(), family_id: state.data.family.id, name: fd.name.trim(), avatar, age: Number(fd.age), balance: Number(fd.balance), level: 1 };
+function selectedFile(value) { return value instanceof File && value.size ? value : null; }
+function fileAsDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); }
+function validateImage(file, maxMb, label) {
+  if (!file) return;
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error(`${label}仅支持 JPG、PNG 或 WebP`);
+  if (file.size > maxMb * 1024 * 1024) throw new Error(`${label}文件不能超过 ${maxMb}MB`);
+}
+async function storeChildImage(file, kind) {
+  if (!file) return null;
+  if (state.demo) return fileAsDataUrl(file);
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const objectPath = `${state.data.family.id}/${kind}-${uid()}.${ext}`;
+  const { error } = await state.supabase.storage.from("child-avatars").upload(objectPath, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+  return `child-avatars/${objectPath}`;
+}
+async function saveChild(fd, id) {
+  const existing = id ? state.data.children.find(child => child.id === id) : null;
+  const avatarFile = selectedFile(fd.avatar_file);
+  const coverFile = selectedFile(fd.cover_file);
+  validateImage(avatarFile, 2, "头像");
+  validateImage(coverFile, 5, "首页封面");
+  let avatar = fd.avatar || existing?.avatar || "🚀";
+  let coverImage = fd.remove_cover === "yes" ? null : (existing?.cover_image || null);
+  if (avatarFile) avatar = await storeChildImage(avatarFile, "avatar");
+  if (coverFile) coverImage = await storeChildImage(coverFile, "cover");
+  const profile = { name: fd.name.trim(), avatar, cover_image: coverImage, age: Number(fd.age) };
   if (state.demo) {
-    state.data.children.push(row);
-    state.data.ledger.unshift({ id: uid(), child_id: row.id, amount: row.balance, balance_after: row.balance, source_type: "initial", description: "开户初始积分", created_at: new Date().toISOString() });
+    if (existing) Object.assign(existing, profile, { avatar_url: null, cover_url: null });
+    else {
+      const row = { id: uid(), family_id: state.data.family.id, ...profile, balance: Number(fd.balance), level: 1 };
+      state.data.children.push(row);
+      state.data.ledger.unshift({ id: uid(), child_id: row.id, amount: row.balance, balance_after: row.balance, source_type: "initial", description: "开户初始积分", created_at: new Date().toISOString() });
+    }
+  } else if (existing) {
+    const { error } = await state.supabase.from("children").update(profile).eq("id", existing.id); if (error) throw error;
   } else {
-    const { error } = await state.supabase.rpc("create_child_account", { p_name: row.name, p_avatar: row.avatar, p_age: row.age, p_initial_balance: row.balance }); if (error) throw error;
+    const { data: childId, error } = await state.supabase.rpc("create_child_account", { p_name: profile.name, p_avatar: profile.avatar, p_age: profile.age, p_initial_balance: Number(fd.balance) });
+    if (error) throw error;
+    if (coverImage) { const { error: coverError } = await state.supabase.from("children").update({ cover_image: coverImage }).eq("id", childId); if (coverError) throw coverError; }
   }
-  closeModal(); await refresh(); toast("儿童成长账户已开设", "success");
+  closeModal(); await refresh(); toast(existing ? "儿童账户资料已更新" : "儿童成长账户已开设", "success");
 }
 async function saveTask(fd, id) {
   const row = { family_id: state.data.family.id, child_id: fd.child_id, name: fd.name.trim(), description: fd.description.trim(), type: fd.type, cycle: fd.cycle, reward_points: Number(fd.reward_points), penalty_points: fd.type === "main" ? Number(fd.penalty_points || 0) : 0, assessment_criteria: fd.assessment_criteria.trim(), icon: fd.icon || "🎯", active: true };
@@ -541,6 +590,7 @@ document.addEventListener("click", async event => {
   if (action === "close-modal") { closeModal(); return; }
   if (action === "show-help") showHelp();
   if (action === "add-child") showChildModal();
+  if (action === "edit-child") showChildModal(state.data.children.find(child => child.id === id));
   if (action === "add-task") state.data.children.length ? showTaskModal() : showChildModal();
   if (action === "edit-task") showTaskModal(state.data.tasks.find(t => t.id === id));
   if (action === "delete-task") await deleteItem("tasks", id, "tasks", "任务");
@@ -585,7 +635,27 @@ document.addEventListener("submit", async event => {
 document.addEventListener("input", event => {
   if (event.target.id === "scoreRange") { const pct = Number(event.target.value), reward = Number(event.target.dataset.reward); $("#scoreValue").textContent = `${pct}%`; $("#scorePoints").textContent = Math.round(reward * pct / 100); }
 });
-document.addEventListener("change", event => { if (event.target.id === "childSwitch") { state.activeChildId = event.target.value; render(); } });
+document.addEventListener("change", event => {
+  if (event.target.id === "childSwitch") { state.activeChildId = event.target.value; render(); return; }
+  const form = event.target.closest("[data-form=child]");
+  if (!form) return;
+  if (event.target.name === "avatar" && event.target.value) {
+    const preview = $(".child-profile-preview .child-avatar", form);
+    if (preview) preview.textContent = event.target.value;
+  }
+  if (event.target.name === "avatar_file" && event.target.files?.[0]) {
+    const preview = $(".child-profile-preview .child-avatar", form);
+    if (preview) preview.innerHTML = `<img src="${URL.createObjectURL(event.target.files[0])}" alt="头像预览" />`;
+  }
+  if (event.target.name === "cover_file" && event.target.files?.[0]) {
+    const preview = $(".cover-preview", form);
+    if (preview) { preview.classList.add("has-image"); preview.style.backgroundImage = `linear-gradient(120deg,rgba(35,43,110,.35),rgba(45,54,140,.58)),url('${URL.createObjectURL(event.target.files[0])}')`; $("span", preview).textContent = "新封面预览"; }
+  }
+  if (event.target.name === "remove_cover") {
+    const preview = $(".cover-preview", form);
+    if (preview && event.target.checked) { preview.classList.remove("has-image"); preview.style.backgroundImage = ""; $("span", preview).textContent = "保存后恢复默认蓝色背景"; }
+  }
+});
 $("#demoLogin").addEventListener("click", () => { state.demo = true; state.data = demoData(); state.activeChildId = state.data.children[0].id; showApp(); toast("已进入演示家庭，数据仅保存在本次页面", "success"); });
 $("#profileButton").addEventListener("click", showProfile);
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeModal(); });

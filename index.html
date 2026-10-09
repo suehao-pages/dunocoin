@@ -4,23 +4,30 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#5B67F1" />
-  <meta name="description" content="家庭儿童积分、任务与奖励管理系统" />
-  <title>小小成长银行</title>
+  <meta name="description" content="dunocoin 家庭儿童积分、任务与奖励管理系统" />
+  <meta name="application-name" content="dunocoin" />
+  <meta name="apple-mobile-web-app-title" content="dunocoin" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>dunocoin</title>
+  <link rel="icon" type="image/png" href="./dunocoin-logo.png" />
+  <link rel="apple-touch-icon" href="./dunocoin-logo.png" />
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=20261009-1" />
+  <link rel="stylesheet" href="./styles.css?v=20261009-2" />
 </head>
 <body>
   <div id="app" class="app-shell" aria-live="polite">
     <section id="authScreen" class="auth-screen hidden">
       <div class="auth-art" aria-hidden="true">
-        <div class="brand-mark large">✦</div>
+        <div class="brand-mark large"><img src="./dunocoin-logo.png" alt="" /></div>
         <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
       </div>
       <div class="auth-card">
         <div class="eyebrow">FAMILY GROWTH</div>
-        <h1>小小成长银行</h1>
+        <h1>dunocoin</h1>
         <p>把每一次好习惯，都存进成长账户。</p>
         <div class="segmented" role="tablist">
           <button class="seg-btn active" data-auth-tab="login">登录</button>
@@ -38,12 +45,12 @@
     </section>
 
     <section id="loadingScreen" class="loading-screen">
-      <div class="loader-logo">✦</div><p>正在打开成长账户…</p>
+      <div class="loader-logo"><img src="./dunocoin-logo.png" alt="dunocoin" /></div><p>正在打开 dunocoin…</p>
     </section>
 
     <section id="mainApp" class="main-app hidden">
       <header class="topbar">
-        <div class="brand-row"><div class="brand-mark">✦</div><div><span id="greeting" class="greeting">下午好</span><h1 id="familyName">星星家庭</h1></div></div>
+        <div class="brand-row"><div class="brand-mark"><img src="./dunocoin-logo.png" alt="dunocoin" /></div><div><span id="greeting" class="greeting">下午好 · dunocoin</span><h1 id="familyName">星星家庭</h1></div></div>
         <div class="top-actions">
           <span id="demoBadge" class="demo-badge hidden">演示</span>
           <button class="icon-btn" data-action="show-help" aria-label="功能说明">!</button>
@@ -68,6 +75,7 @@
 
   <script src="./config.js" onerror="this.remove()"></script>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script type="module" src="./app.js?v=20261009-1"></script>
+  <script type="module" src="./app.js?v=20261009-2"></script>
+  <script>if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));</script>
 </body>
 </html>

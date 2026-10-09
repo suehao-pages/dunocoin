@@ -1,0 +1,25 @@
+{
+  "name": "dunocoin",
+  "short_name": "dunocoin",
+  "description": "家庭儿童积分、任务与奖励管理系统",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7fc",
+  "theme_color": "#5b67f1",
+  "icons": [
+    {
+      "src": "./dunocoin-logo.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./dunocoin-logo.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
